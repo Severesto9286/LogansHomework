@@ -74,11 +74,28 @@ function pgBackend(url) {
   };
 }
 
-const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
+// Find a Postgres connection string. Vercel/Neon normally set DATABASE_URL, but
+// integrations can use a custom prefix (e.g. STORAGE_DATABASE_URL), so also
+// accept any *DATABASE_URL / *POSTGRES_URL variable, or any postgres:// value.
+function findDbUrl() {
+  const env = process.env;
+  const isPg = (v) => /^postgres(ql)?:\/\//i.test(String(v || ''));
+  const preferred = ['DATABASE_URL', 'POSTGRES_URL', 'NEON_DATABASE_URL', 'POSTGRES_PRISMA_URL'];
+  for (const k of preferred) if (isPg(env[k])) return env[k];
+  const named = Object.keys(env).filter((k) => /(DATABASE|POSTGRES)_URL$/i.test(k) && isPg(env[k])).sort();
+  if (named.length) return env[named[0]];
+  const any = Object.keys(env).find((k) => isPg(env[k]));
+  return any ? env[any] : undefined;
+}
+
+const dbUrl = findDbUrl();
 if (!dbUrl && process.env.VERCEL) {
+  const seen = Object.keys(process.env).filter((k) => /(DATABASE|POSTGRES|NEON|PG)/i.test(k)).sort();
   throw new Error(
-    "No database configured. In Vercel open your project -> Storage -> Create Database -> Neon (Postgres) and connect it " +
-    "(this sets DATABASE_URL), then redeploy. The JSON-file store only works when running the server on your own machine.",
+    "No database connection string found in the environment. " +
+    "In Vercel: Storage -> connect a Neon (Postgres) database to this project, make sure it is enabled for the Production environment, " +
+    "then REDEPLOY (Deployments -> ... -> Redeploy) - environment variables only apply to new deployments. " +
+    (seen.length ? "Database-related variables visible to the function: " + seen.join(", ") : "No database-related variables are visible to the function at all."),
   );
 }
 const backend = dbUrl ? pgBackend(dbUrl) : jsonBackend();
