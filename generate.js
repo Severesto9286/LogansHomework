@@ -15,6 +15,8 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { generateHomework } from './ai.js';
 
+try { process.loadEnvFile('.env'); } catch { /* no .env file - flags or exported env vars are used instead */ }
+
 const { values: args } = parseArgs({
   options: {
     subject: { type: 'string' },

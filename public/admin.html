@@ -16,6 +16,7 @@
       <button class="active" data-tab="create">Create homework</button>
       <button data-tab="homework">Homework &amp; submissions</button>
       <button data-tab="students">Students</button>
+      <button data-tab="account">My account</button>
     </div>
 
     <!-- ===== CREATE ===== -->
@@ -72,6 +73,9 @@
       </div>
     </section>
 
+    <!-- ===== ACCOUNT ===== -->
+    <section id="tab-account" hidden></section>
+
     <!-- ===== STUDENTS ===== -->
     <section id="tab-students" hidden>
       <div class="card">
@@ -100,7 +104,7 @@
     document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
     function showTab(name) {
       document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
-      ['create', 'homework', 'students'].forEach((t) => (document.getElementById('tab-' + t).hidden = t !== name));
+      ['create', 'homework', 'students', 'account'].forEach((t) => (document.getElementById('tab-' + t).hidden = t !== name));
       if (name === 'homework') loadHomework();
       if (name === 'students') loadStudents();
     }
@@ -276,7 +280,9 @@
 
     (async () => {
       const user = await requireLogin('admin');
-      if (user) document.getElementById('who').textContent = user.name;
+      if (!user) return;
+      document.getElementById('who').textContent = user.name;
+      passwordCard('tab-account');
     })();
   </script>
 </body>

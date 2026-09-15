@@ -17,6 +17,7 @@
         <h2>My homework</h2>
         <div id="hw-list"></div>
       </div>
+      <div id="account"></div>
     </section>
 
     <section id="work-view" hidden>
@@ -141,6 +142,7 @@
       const user = await requireLogin('student');
       if (!user) return;
       document.getElementById('who').textContent = user.name;
+      passwordCard('account');
       loadList();
     })();
   </script>

@@ -69,6 +69,17 @@ app.get('/api/me', (req, res) => {
   res.json({ user: req.user || null });
 });
 
+app.post('/api/password', requireRole(), wrap(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ error: 'New password must be at least 4 characters' });
+  const user = await store.users.byId(req.user.id);
+  if (!user || !store.verifyPassword(String(currentPassword || ''), user)) {
+    return res.status(401).json({ error: 'Current password is wrong' });
+  }
+  await store.users.save({ ...user, ...store.hashPassword(String(newPassword)) });
+  res.json({ ok: true });
+}));
+
 // ---------- admin: students ----------
 const admin = express.Router();
 admin.use(requireRole('admin'));
