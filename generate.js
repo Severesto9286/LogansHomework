@@ -70,7 +70,8 @@ if (file) {
 
   homework.questions.forEach((q, i) => {
     console.log(`Q${i + 1}. ${q.text}`);
-    console.log(`    Answer: ${q.answer}`);
+    console.log(`    Final answer: ${q.finalAnswer}`);
+    console.log(`    Working: ${q.answer}`);
     q.hints.forEach((h, j) => console.log(`    Hint ${j + 1}: ${h}`));
     console.log();
   });

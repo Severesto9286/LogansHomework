@@ -150,6 +150,7 @@ admin.post('/homework', wrap(async (req, res) => {
         id: store.newId(),
         text: String(q.text).trim(),
         answer: String(q.answer || '').trim(),
+        finalAnswer: String(q.finalAnswer || '').trim(),
         hints: (Array.isArray(q.hints) ? q.hints : [])
           .map((h) => String(h || '').trim())
           .filter(Boolean)

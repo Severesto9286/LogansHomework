@@ -46,14 +46,15 @@ const homeworkSchema = {
         type: 'object',
         properties: {
           text: { type: 'string', description: 'The question as shown to the student' },
-          answer: { type: 'string', description: 'Model answer / marking guide (never shown to students)' },
+          answer: { type: 'string', description: 'Full worked model answer / marking guide (never shown to students)' },
+          finalAnswer: { type: 'string', description: 'Just the final answer, written exactly in the format the question asks for' },
           hints: {
             type: 'array',
             description: `Exactly ${HINTS_PER_QUESTION} progressive hints, from a gentle nudge to nearly-there, never revealing the answer`,
             items: { type: 'string' },
           },
         },
-        required: ['text', 'answer', 'hints'],
+        required: ['text', 'answer', 'finalAnswer', 'hints'],
       },
     },
   },
@@ -65,8 +66,12 @@ export async function generateHomework({ subject, topic, level, count, notes }) 
 Write clear, self-contained questions appropriate for the stated level.
 Each question must be answerable in a short written response (a sentence, a number, or a short working).
 Vary the difficulty from easy to challenging. Do not number the questions in the text field.
+Every question MUST end with an explicit instruction saying exactly how the answer should be written, for example:
+"Give your answer as x = ..., y = ...", "Give your answer in pounds, e.g. £1.50", "Give your answers as coordinate pairs (x, y)",
+"Give your answer to 2 decimal places", "Answer in one sentence". Choose the format that fits the question.
 For each question write:
-- a concise model answer for the teacher;
+- a full worked model answer for the teacher;
+- the final answer on its own, written exactly in the format the question asks for (e.g. "x = 7, y = 3");
 - exactly ${HINTS_PER_QUESTION} hints a student can reveal one at a time, in order:
   1. a gentle nudge toward the relevant idea or first step,
   2. a more specific hint about the method or a common mistake,
@@ -83,6 +88,7 @@ ${notes ? `Extra instructions from the teacher: ${notes}` : ''}`;
   return out.questions.slice(0, count).map((q) => ({
     text: q.text,
     answer: q.answer,
+    finalAnswer: q.finalAnswer,
     hints: q.hints.slice(0, HINTS_PER_QUESTION),
   }));
 }

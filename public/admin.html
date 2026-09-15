@@ -124,7 +124,7 @@
         const list = Array.isArray(data) ? data : data.questions;
         if (!Array.isArray(list) || !list.length) throw new Error('No "questions" array found in the JSON.');
         questions = questions.concat(list.map((q) => ({
-          text: String(q.text || ''), answer: String(q.answer || ''),
+          text: String(q.text || ''), answer: String(q.answer || ''), finalAnswer: String(q.finalAnswer || ''),
           hints: (Array.isArray(q.hints) ? q.hints : []).map(String).slice(0, MAX_HINTS),
         })));
         if (!Array.isArray(data)) {
@@ -140,7 +140,7 @@
     });
 
     document.getElementById('g-add').addEventListener('click', () => {
-      questions.push({ text: '', answer: '', hints: [] });
+      questions.push({ text: '', answer: '', finalAnswer: '', hints: [] });
       renderQuestions();
     });
 
@@ -151,7 +151,9 @@
         <div class="question">
           <label><span class="qnum">Q${i + 1}</span> Question</label>
           <textarea data-i="${i}" data-f="text">${esc(q.text)}</textarea>
-          <label>Model answer (teacher only)</label>
+          <label>Final answer (teacher only, in the format the question asks for)</label>
+          <input data-i="${i}" data-f="finalAnswer" value="${esc(q.finalAnswer || '')}">
+          <label>Worked answer / marking guide (teacher only)</label>
           <textarea data-i="${i}" data-f="answer" style="min-height:48px">${esc(q.answer)}</textarea>
           ${(q.hints || []).map((h, j) => `<label>Hint ${j + 1}</label>
           <textarea data-i="${i}" data-h="${j}" style="min-height:40px">${esc(h)}</textarea>`).join('')}
@@ -161,7 +163,7 @@
             <button class="danger small" data-del="${i}">Remove question</button>
           </div>
         </div>`).join('');
-      box.querySelectorAll('textarea[data-f]').forEach((t) => t.addEventListener('input', () => { questions[t.dataset.i][t.dataset.f] = t.value; }));
+      box.querySelectorAll('[data-f]').forEach((t) => t.addEventListener('input', () => { questions[t.dataset.i][t.dataset.f] = t.value; }));
       box.querySelectorAll('textarea[data-h]').forEach((t) => t.addEventListener('input', () => { questions[t.dataset.i].hints[t.dataset.h] = t.value; }));
       box.querySelectorAll('[data-addhint]').forEach((b) => b.addEventListener('click', () => { (questions[b.dataset.addhint].hints ||= []).push(''); renderQuestions(); }));
       box.querySelectorAll('[data-delhint]').forEach((b) => b.addEventListener('click', () => { questions[b.dataset.delhint].hints.pop(); renderQuestions(); }));
@@ -229,14 +231,14 @@
       const body = document.getElementById('sub-body');
       body.innerHTML = `
         <h3>Questions</h3>
-        ${hw.questions.map((q, i) => `<div class="question"><span class="qnum">Q${i + 1}</span>${esc(q.text)}<div class="muted" style="margin-top:6px"><b>Model answer:</b> ${esc(q.answer)}</div>${(q.hints || []).map((h, j) => `<div class="hint">Hint ${j + 1}: ${esc(h)}</div>`).join('')}</div>`).join('')}
+        ${hw.questions.map((q, i) => `<div class="question"><span class="qnum">Q${i + 1}</span>${esc(q.text)}${q.finalAnswer ? `<div style="margin-top:6px"><b>Answer:</b> ${esc(q.finalAnswer)}</div>` : ''}<div class="muted" style="margin-top:4px"><b>Working:</b> ${esc(q.answer)}</div>${(q.hints || []).map((h, j) => `<div class="hint">Hint ${j + 1}: ${esc(h)}</div>`).join('')}</div>`).join('')}
         <h3>Submissions</h3>
         ${rows.length ? rows.map(({ student, submission: s }) => `
           <div class="question">
             <b>${esc(student.name)}</b> <span class="muted">(${esc(student.username)})</span>
             ${s?.submittedAt ? `<span class="badge ok">Submitted ${esc(fmtDate(s.submittedAt))}</span>` : s ? '<span class="badge">In progress</span>' : '<span class="badge">Not started</span>'}
-            ${s ? `<table style="margin-top:8px"><thead><tr><th>#</th><th>Answer</th><th>Hints used</th></tr></thead><tbody>
-              ${hw.questions.map((q, i) => `<tr><td>Q${i + 1}</td><td>${esc(s.answers[q.id] || '') || '<span class="muted">—</span>'}</td>
+            ${s ? `<table style="margin-top:8px"><thead><tr><th>#</th><th>Student's answer</th><th>Expected</th><th>Hints used</th></tr></thead><tbody>
+              ${hw.questions.map((q, i) => `<tr><td>Q${i + 1}</td><td>${esc(s.answers[q.id] || '') || '<span class="muted">—</span>'}</td><td class="muted">${esc(q.finalAnswer || '')}</td>
                 <td>${(s.hints[q.id] || []).length ? (s.hints[q.id] || []).map((h) => `<div class="hint">${esc(h.hint)}</div>`).join('') : '<span class="muted">0</span>'}</td></tr>`).join('')}
             </tbody></table>` : ''}
           </div>`).join('') : '<p class="muted">No students are assigned to this homework.</p>'}`;
