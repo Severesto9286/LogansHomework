@@ -98,7 +98,7 @@ async function publish() {
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(`${p}: ${data.error || res.status}`);
+    if (!res.ok) throw new Error(`${p}: ${typeof data.error === 'string' ? data.error : data.error?.message || res.status}`);
     return { data, cookie: res.headers.get('set-cookie')?.split(';')[0] };
   }
 
