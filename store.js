@@ -74,7 +74,13 @@ function pgBackend(url) {
   };
 }
 
-const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
+if (!dbUrl && process.env.VERCEL) {
+  throw new Error(
+    "No database configured. In Vercel open your project -> Storage -> Create Database -> Neon (Postgres) and connect it " +
+    "(this sets DATABASE_URL), then redeploy. The JSON-file store only works when running the server on your own machine.",
+  );
+}
 const backend = dbUrl ? pgBackend(dbUrl) : jsonBackend();
 export const backendName = backend.name;
 
