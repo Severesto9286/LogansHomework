@@ -1,14 +1,14 @@
 {
   "name": "homework-app",
   "version": "1.0.0",
-  "description": "Homework site: admin sets AI-generated homework, students answer with AI hints. Uses your Claude Code login locally or an API key on Vercel.",
+  "description": "Homework site: students answer questions with pre-written hints; generate questions and hints locally with your Claude Code login.",
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "generate": "node generate.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.125.0",
     "@neondatabase/serverless": "^1.1.0",
     "express": "^5.1.0"
   },

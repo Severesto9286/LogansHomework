@@ -21,28 +21,23 @@
     <!-- ===== CREATE ===== -->
     <section id="tab-create">
       <div class="card">
-        <h2>1. Generate questions with AI</h2>
-        <div class="row">
-          <div><label>Subject</label><input id="g-subject" placeholder="e.g. Maths"></div>
-          <div><label>Topic</label><input id="g-topic" placeholder="e.g. Solving linear equations"></div>
-        </div>
-        <div class="row">
-          <div><label>Student level</label><input id="g-level" placeholder="e.g. Year 8 / Grade 7" value="secondary school"></div>
-          <div><label>Number of questions</label><input id="g-count" type="number" min="1" max="20" value="5"></div>
-        </div>
-        <label>Extra instructions (optional)</label>
-        <textarea id="g-notes" placeholder="e.g. include one word problem, no calculators"></textarea>
+        <h2>1. Add questions</h2>
+        <p class="muted">Generate questions, model answers and hints on your own computer with your Claude Code login, then import the file here (or publish straight from the command line):</p>
+        <pre class="muted" style="background:#f4f6fb;padding:10px;border-radius:8px;overflow:auto">node generate.js --subject "Maths" --topic "Linear equations" --level "Year 8" --count 5</pre>
+        <label>Import a generated homework file (.json)</label>
+        <input id="i-file" type="file" accept=".json,application/json">
+        <label>…or paste its contents</label>
+        <textarea id="i-json" placeholder='{"title": "...", "questions": [ ... ]}'></textarea>
         <div class="actions">
-          <button id="g-btn">Generate questions</button>
-          <button class="secondary" id="g-add">Add a blank question instead</button>
-          <span class="muted">Generation takes 10–40 seconds.</span>
+          <button id="i-btn">Import</button>
+          <button class="secondary" id="g-add">Add a question by hand</button>
         </div>
-        <div class="error" id="g-error"></div>
+        <div class="error" id="i-error"></div>
       </div>
 
       <div class="card">
         <h2>2. Review &amp; edit</h2>
-        <p class="muted">Edit anything before assigning. The model answer is only ever shown to you and used by the AI to steer hints.</p>
+        <p class="muted">Edit anything before assigning. The model answer is only ever shown to you. Students can reveal the hints one at a time, in order.</p>
         <div id="q-list"><p class="muted">No questions yet.</p></div>
       </div>
 
@@ -50,6 +45,8 @@
         <h2>3. Assign</h2>
         <div class="row">
           <div><label>Title</label><input id="a-title" placeholder="e.g. Week 3 – Linear equations"></div>
+          <div><label>Subject</label><input id="a-subject" placeholder="e.g. Maths"></div>
+          <div><label>Level</label><input id="a-level" placeholder="e.g. Year 8"></div>
           <div><label>Due date (optional)</label><input id="a-due" type="date"></div>
         </div>
         <label>Assign to</label>
@@ -108,29 +105,38 @@
       if (name === 'students') loadStudents();
     }
 
-    // ---- create: generate ----
-    document.getElementById('g-btn').addEventListener('click', async () => {
-      const btn = document.getElementById('g-btn');
-      const err = document.getElementById('g-error');
+    // ---- create: import ----
+    const MAX_HINTS = 3;
+    document.getElementById('i-file').addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      if (f) document.getElementById('i-json').value = await f.text();
+    });
+
+    document.getElementById('i-btn').addEventListener('click', () => {
+      const err = document.getElementById('i-error');
       err.textContent = '';
-      busy(btn, true, 'Generating…');
       try {
-        const data = await api('/api/admin/generate', {
-          method: 'POST',
-          body: {
-            subject: v('g-subject'), topic: v('g-topic'), level: v('g-level'),
-            count: v('g-count'), notes: v('g-notes'),
-          },
-        });
-        questions = questions.concat(data.questions);
+        const data = JSON.parse(v('i-json'));
+        const list = Array.isArray(data) ? data : data.questions;
+        if (!Array.isArray(list) || !list.length) throw new Error('No "questions" array found in the JSON.');
+        questions = questions.concat(list.map((q) => ({
+          text: String(q.text || ''), answer: String(q.answer || ''),
+          hints: (Array.isArray(q.hints) ? q.hints : []).map(String).slice(0, MAX_HINTS),
+        })));
+        if (!Array.isArray(data)) {
+          if (data.title && !v('a-title')) document.getElementById('a-title').value = data.title;
+          if (data.subject && !v('a-subject')) document.getElementById('a-subject').value = data.subject;
+          if (data.level && !v('a-level')) document.getElementById('a-level').value = data.level;
+          if (data.dueDate && !v('a-due')) document.getElementById('a-due').value = data.dueDate;
+        }
+        document.getElementById('i-json').value = '';
+        document.getElementById('i-file').value = '';
         renderQuestions();
-        if (!v('a-title')) document.getElementById('a-title').value = `${v('g-subject')} – ${v('g-topic')}`;
-      } catch (ex) { err.textContent = ex.message; }
-      busy(btn, false);
+      } catch (ex) { err.textContent = 'Could not import: ' + ex.message; }
     });
 
     document.getElementById('g-add').addEventListener('click', () => {
-      questions.push({ text: '', answer: '' });
+      questions.push({ text: '', answer: '', hints: [] });
       renderQuestions();
     });
 
@@ -143,9 +149,18 @@
           <textarea data-i="${i}" data-f="text">${esc(q.text)}</textarea>
           <label>Model answer (teacher only)</label>
           <textarea data-i="${i}" data-f="answer" style="min-height:48px">${esc(q.answer)}</textarea>
-          <div class="actions"><button class="danger small" data-del="${i}">Remove</button></div>
+          ${(q.hints || []).map((h, j) => `<label>Hint ${j + 1}</label>
+          <textarea data-i="${i}" data-h="${j}" style="min-height:40px">${esc(h)}</textarea>`).join('')}
+          <div class="actions">
+            ${(q.hints || []).length < MAX_HINTS ? `<button class="secondary small" data-addhint="${i}">Add hint</button>` : ''}
+            ${(q.hints || []).length ? `<button class="secondary small" data-delhint="${i}">Remove last hint</button>` : ''}
+            <button class="danger small" data-del="${i}">Remove question</button>
+          </div>
         </div>`).join('');
-      box.querySelectorAll('textarea').forEach((t) => t.addEventListener('input', () => { questions[t.dataset.i][t.dataset.f] = t.value; }));
+      box.querySelectorAll('textarea[data-f]').forEach((t) => t.addEventListener('input', () => { questions[t.dataset.i][t.dataset.f] = t.value; }));
+      box.querySelectorAll('textarea[data-h]').forEach((t) => t.addEventListener('input', () => { questions[t.dataset.i].hints[t.dataset.h] = t.value; }));
+      box.querySelectorAll('[data-addhint]').forEach((b) => b.addEventListener('click', () => { (questions[b.dataset.addhint].hints ||= []).push(''); renderQuestions(); }));
+      box.querySelectorAll('[data-delhint]').forEach((b) => b.addEventListener('click', () => { questions[b.dataset.delhint].hints.pop(); renderQuestions(); }));
       box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { questions.splice(Number(b.dataset.del), 1); renderQuestions(); }));
     }
 
@@ -173,11 +188,11 @@
       try {
         await api('/api/admin/homework', {
           method: 'POST',
-          body: { title: v('a-title'), subject: v('g-subject'), level: v('g-level'), dueDate: v('a-due'), questions, assignedTo },
+          body: { title: v('a-title'), subject: v('a-subject'), level: v('a-level'), dueDate: v('a-due'), questions, assignedTo },
         });
         ok.textContent = 'Homework assigned.';
         questions = []; renderQuestions();
-        document.getElementById('a-title').value = '';
+        ['a-title', 'a-subject', 'a-level', 'a-due'].forEach((id) => (document.getElementById(id).value = ''));
       } catch (ex) { err.textContent = ex.message; }
       busy(btn, false);
     });
@@ -210,7 +225,7 @@
       const body = document.getElementById('sub-body');
       body.innerHTML = `
         <h3>Questions</h3>
-        ${hw.questions.map((q, i) => `<div class="question"><span class="qnum">Q${i + 1}</span>${esc(q.text)}<div class="muted" style="margin-top:6px"><b>Model answer:</b> ${esc(q.answer)}</div></div>`).join('')}
+        ${hw.questions.map((q, i) => `<div class="question"><span class="qnum">Q${i + 1}</span>${esc(q.text)}<div class="muted" style="margin-top:6px"><b>Model answer:</b> ${esc(q.answer)}</div>${(q.hints || []).map((h, j) => `<div class="hint">Hint ${j + 1}: ${esc(h)}</div>`).join('')}</div>`).join('')}
         <h3>Submissions</h3>
         ${rows.length ? rows.map(({ student, submission: s }) => `
           <div class="question">

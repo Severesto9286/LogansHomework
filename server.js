@@ -3,10 +3,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as store from './store.js';
 import { getSession, setSession, clearSession } from './auth.js';
-import { generateQuestions, generateHint, backendName as aiBackend } from './ai.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MAX_HINTS_PER_QUESTION = 3;
+const MAX_HINTS_PER_QUESTION = 3; // hints are written up front (see generate.js) and revealed one at a time
 
 const app = express();
 app.set('trust proxy', 1); // Vercel / reverse proxies terminate HTTPS for us
@@ -40,7 +39,7 @@ const studentView = (hw) => ({
   level: hw.level,
   dueDate: hw.dueDate,
   createdAt: hw.createdAt,
-  questions: hw.questions.map((q) => ({ id: q.id, text: q.text })),
+  questions: hw.questions.map((q) => ({ id: q.id, text: q.text, hintsAvailable: (q.hints || []).length })),
 });
 
 // Seed the admin account once per process (lazily, so it also works on serverless).
@@ -113,21 +112,6 @@ admin.delete('/students/:id', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// ---------- admin: AI question generation ----------
-admin.post('/generate', wrap(async (req, res) => {
-  const { subject, topic, level, count, notes } = req.body || {};
-  if (!subject || !topic) return res.status(400).json({ error: 'Subject and topic are required' });
-  const n = Math.min(Math.max(parseInt(count, 10) || 5, 1), 20);
-  const questions = await generateQuestions({
-    subject: String(subject),
-    topic: String(topic),
-    level: String(level || 'secondary school'),
-    count: n,
-    notes: notes ? String(notes) : '',
-  });
-  res.json({ questions });
-}));
-
 // ---------- admin: homework ----------
 admin.get('/homework', wrap(async (req, res) => {
   const subs = await store.submissions.list();
@@ -151,7 +135,15 @@ admin.post('/homework', wrap(async (req, res) => {
     dueDate: dueDate ? String(dueDate) : null,
     questions: questions
       .filter((q) => q && String(q.text || '').trim())
-      .map((q) => ({ id: store.newId(), text: String(q.text).trim(), answer: String(q.answer || '').trim() })),
+      .map((q) => ({
+        id: store.newId(),
+        text: String(q.text).trim(),
+        answer: String(q.answer || '').trim(),
+        hints: (Array.isArray(q.hints) ? q.hints : [])
+          .map((h) => String(h || '').trim())
+          .filter(Boolean)
+          .slice(0, MAX_HINTS_PER_QUESTION),
+      })),
     assignedTo: assignedTo === 'all' || !Array.isArray(assignedTo) ? 'all' : assignedTo.filter((id) => studentIds.has(id)),
     createdAt: new Date().toISOString(),
   };
@@ -218,7 +210,7 @@ student.get('/homework/:id', wrap(async (req, res) => {
   const hw = await loadMyHomework(req, res);
   if (!hw) return;
   const submission = await store.submissions.find(hw.id, req.user.id);
-  res.json({ homework: studentView(hw), submission, maxHints: MAX_HINTS_PER_QUESTION });
+  res.json({ homework: studentView(hw), submission });
 }));
 
 student.post('/homework/:id/hint', wrap(async (req, res) => {
@@ -230,21 +222,15 @@ student.post('/homework/:id/hint', wrap(async (req, res) => {
   const sub = await getOrCreateSubmission(hw, req.user.id);
   if (sub.submittedAt) return res.status(400).json({ error: 'Homework already submitted' });
   const used = sub.hints[q.id] || [];
-  if (used.length >= MAX_HINTS_PER_QUESTION) {
-    return res.status(429).json({ error: `You have used all ${MAX_HINTS_PER_QUESTION} hints for this question` });
+  const available = q.hints || [];
+  if (used.length >= available.length) {
+    return res.status(429).json({ error: available.length ? 'No more hints for this question' : 'This question has no hints' });
   }
-  const hint = await generateHint({
-    subject: hw.subject,
-    level: hw.level,
-    question: q.text,
-    answer: q.answer,
-    attempt: String(attempt || ''),
-    hintNumber: used.length + 1,
-  });
+  const hint = available[used.length];
   used.push({ hint, attempt: String(attempt || ''), at: new Date().toISOString() });
   sub.hints[q.id] = used;
   await store.submissions.save(sub);
-  res.json({ hint, hintsUsed: used.length, maxHints: MAX_HINTS_PER_QUESTION });
+  res.json({ hint, hintsUsed: used.length, maxHints: available.length });
 }));
 
 async function saveAnswers(req, res, { submit }) {
@@ -282,7 +268,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const PORT = Number(process.env.PORT) || 3000;
   app.listen(PORT, async () => {
     console.log(`Homework app running at http://localhost:${PORT}`);
-    console.log(`Storage: ${store.backendName} | AI: ${aiBackend}`);
+    console.log(`Storage: ${store.backendName}`);
     await ensureSeeded();
   });
 }

@@ -56,7 +56,7 @@
 
     async function openHomework(id) {
       current = await api('/api/student/homework/' + id);
-      const { homework: hw, submission: sub, maxHints } = current;
+      const { homework: hw, submission: sub } = current;
       const done = !!sub?.submittedAt;
       document.getElementById('list-view').hidden = true;
       document.getElementById('work-view').hidden = false;
@@ -69,12 +69,13 @@
 
       document.getElementById('w-questions').innerHTML = hw.questions.map((q, i) => {
         const hints = sub?.hints?.[q.id] || [];
+        const maxHints = q.hintsAvailable || 0;
         return `<div class="question" data-q="${q.id}">
           <div><span class="qnum">Q${i + 1}</span>${esc(q.text)}</div>
           <label>Your answer</label>
           <textarea data-answer="${q.id}" ${done ? 'disabled' : ''}>${esc(sub?.answers?.[q.id] || '')}</textarea>
           <div class="hints">${hints.map((h) => `<div class="hint">💡 ${esc(h.hint)}</div>`).join('')}</div>
-          ${done ? '' : `<div class="actions">
+          ${done || !maxHints ? '' : `<div class="actions">
             <button class="secondary small" data-hint="${q.id}" ${hints.length >= maxHints ? 'disabled' : ''}>Get a hint</button>
             <span class="muted" data-hintcount="${q.id}">${hints.length}/${maxHints} hints used</span>
           </div>`}
@@ -90,7 +91,7 @@
       const attempt = box.querySelector('textarea').value;
       const err = document.getElementById('w-error');
       err.textContent = '';
-      busy(btn, true, 'Thinking…');
+      busy(btn, true, 'Loading…');
       try {
         const { hint, hintsUsed, maxHints } = await api(`/api/student/homework/${current.homework.id}/hint`, {
           method: 'POST', body: { questionId: qid, attempt },
