@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Homework – Student</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Homework</h1>
+    <div><span class="who" id="who"></span> &nbsp; <button class="secondary small" onclick="logout()">Sign out</button></div>
+  </header>
+  <main>
+    <section id="list-view">
+      <div class="card">
+        <h2>My homework</h2>
+        <div id="hw-list"></div>
+      </div>
+    </section>
+
+    <section id="work-view" hidden>
+      <div class="actions" style="margin:0 0 12px"><button class="secondary small" id="back">← Back to list</button></div>
+      <div class="card">
+        <h2 id="w-title"></h2>
+        <p class="muted" id="w-meta"></p>
+        <div id="w-questions"></div>
+        <div class="actions">
+          <button class="secondary" id="w-save">Save progress</button>
+          <button id="w-submit">Submit homework</button>
+          <span class="muted" id="w-status"></span>
+        </div>
+        <div class="error" id="w-error"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    let current = null; // { homework, submission, maxHints }
+
+    async function loadList() {
+      document.getElementById('work-view').hidden = true;
+      document.getElementById('list-view').hidden = false;
+      const { homework } = await api('/api/student/homework');
+      const box = document.getElementById('hw-list');
+      if (!homework.length) { box.innerHTML = '<p class="muted">No homework has been set for you yet.</p>'; return; }
+      box.innerHTML = `<table><thead><tr><th>Title</th><th>Subject</th><th>Questions</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>
+        ${homework.slice().reverse().map((h) => `<tr>
+          <td>${esc(h.title)}</td><td>${esc(h.subject)}</td><td>${h.questions.length}</td><td>${esc(h.dueDate || '—')}</td>
+          <td>${h.submitted ? '<span class="badge ok">Submitted</span>' : '<span class="badge">To do</span>'}</td>
+          <td><button class="small ${h.submitted ? 'secondary' : ''}" data-open="${h.id}">${h.submitted ? 'View' : 'Open'}</button></td>
+        </tr>`).join('')}</tbody></table>`;
+      box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openHomework(b.dataset.open)));
+    }
+
+    async function openHomework(id) {
+      current = await api('/api/student/homework/' + id);
+      const { homework: hw, submission: sub, maxHints } = current;
+      const done = !!sub?.submittedAt;
+      document.getElementById('list-view').hidden = true;
+      document.getElementById('work-view').hidden = false;
+      document.getElementById('w-title').textContent = hw.title;
+      document.getElementById('w-meta').textContent = [hw.subject, hw.level, hw.dueDate ? 'Due ' + hw.dueDate : ''].filter(Boolean).join(' · ');
+      document.getElementById('w-error').textContent = '';
+      document.getElementById('w-status').textContent = done ? 'Submitted ' + fmtDate(sub.submittedAt) : '';
+      document.getElementById('w-save').hidden = done;
+      document.getElementById('w-submit').hidden = done;
+
+      document.getElementById('w-questions').innerHTML = hw.questions.map((q, i) => {
+        const hints = sub?.hints?.[q.id] || [];
+        return `<div class="question" data-q="${q.id}">
+          <div><span class="qnum">Q${i + 1}</span>${esc(q.text)}</div>
+          <label>Your answer</label>
+          <textarea data-answer="${q.id}" ${done ? 'disabled' : ''}>${esc(sub?.answers?.[q.id] || '')}</textarea>
+          <div class="hints">${hints.map((h) => `<div class="hint">💡 ${esc(h.hint)}</div>`).join('')}</div>
+          ${done ? '' : `<div class="actions">
+            <button class="secondary small" data-hint="${q.id}" ${hints.length >= maxHints ? 'disabled' : ''}>Get a hint</button>
+            <span class="muted" data-hintcount="${q.id}">${hints.length}/${maxHints} hints used</span>
+          </div>`}
+        </div>`;
+      }).join('');
+
+      document.querySelectorAll('[data-hint]').forEach((b) => b.addEventListener('click', () => getHint(b)));
+    }
+
+    async function getHint(btn) {
+      const qid = btn.dataset.hint;
+      const box = btn.closest('.question');
+      const attempt = box.querySelector('textarea').value;
+      const err = document.getElementById('w-error');
+      err.textContent = '';
+      busy(btn, true, 'Thinking…');
+      try {
+        const { hint, hintsUsed, maxHints } = await api(`/api/student/homework/${current.homework.id}/hint`, {
+          method: 'POST', body: { questionId: qid, attempt },
+        });
+        box.querySelector('.hints').insertAdjacentHTML('beforeend', `<div class="hint">💡 ${esc(hint)}</div>`);
+        box.querySelector('[data-hintcount]').textContent = `${hintsUsed}/${maxHints} hints used`;
+        busy(btn, false);
+        if (hintsUsed >= maxHints) btn.disabled = true;
+      } catch (ex) {
+        err.textContent = ex.message;
+        busy(btn, false);
+      }
+    }
+
+    function collectAnswers() {
+      const answers = {};
+      document.querySelectorAll('[data-answer]').forEach((t) => (answers[t.dataset.answer] = t.value));
+      return answers;
+    }
+
+    document.getElementById('w-save').addEventListener('click', async () => {
+      const btn = document.getElementById('w-save');
+      busy(btn, true, 'Saving…');
+      try {
+        await api(`/api/student/homework/${current.homework.id}/save`, { method: 'POST', body: { answers: collectAnswers() } });
+        document.getElementById('w-status').textContent = 'Saved ' + new Date().toLocaleTimeString();
+      } catch (ex) { document.getElementById('w-error').textContent = ex.message; }
+      busy(btn, false);
+    });
+
+    document.getElementById('w-submit').addEventListener('click', async () => {
+      const answers = collectAnswers();
+      const blank = Object.values(answers).filter((a) => !a.trim()).length;
+      if (blank && !confirm(`${blank} question(s) are blank. Submit anyway?`)) return;
+      if (!blank && !confirm('Submit your homework? You cannot change it afterwards.')) return;
+      const btn = document.getElementById('w-submit');
+      busy(btn, true, 'Submitting…');
+      try {
+        await api(`/api/student/homework/${current.homework.id}/submit`, { method: 'POST', body: { answers } });
+        openHomework(current.homework.id);
+      } catch (ex) { document.getElementById('w-error').textContent = ex.message; busy(btn, false); }
+    });
+
+    document.getElementById('back').addEventListener('click', loadList);
+
+    (async () => {
+      const user = await requireLogin('student');
+      if (!user) return;
+      document.getElementById('who').textContent = user.name;
+      loadList();
+    })();
+  </script>
+</body>
+</html>

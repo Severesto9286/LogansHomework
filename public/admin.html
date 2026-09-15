@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Homework – Admin</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Homework · Administrator</h1>
+    <div><span class="who" id="who"></span> &nbsp; <button class="secondary small" onclick="logout()">Sign out</button></div>
+  </header>
+  <main>
+    <div class="tabs">
+      <button class="active" data-tab="create">Create homework</button>
+      <button data-tab="homework">Homework &amp; submissions</button>
+      <button data-tab="students">Students</button>
+    </div>
+
+    <!-- ===== CREATE ===== -->
+    <section id="tab-create">
+      <div class="card">
+        <h2>1. Generate questions with AI</h2>
+        <div class="row">
+          <div><label>Subject</label><input id="g-subject" placeholder="e.g. Maths"></div>
+          <div><label>Topic</label><input id="g-topic" placeholder="e.g. Solving linear equations"></div>
+        </div>
+        <div class="row">
+          <div><label>Student level</label><input id="g-level" placeholder="e.g. Year 8 / Grade 7" value="secondary school"></div>
+          <div><label>Number of questions</label><input id="g-count" type="number" min="1" max="20" value="5"></div>
+        </div>
+        <label>Extra instructions (optional)</label>
+        <textarea id="g-notes" placeholder="e.g. include one word problem, no calculators"></textarea>
+        <div class="actions">
+          <button id="g-btn">Generate questions</button>
+          <button class="secondary" id="g-add">Add a blank question instead</button>
+          <span class="muted">Generation takes 10–40 seconds.</span>
+        </div>
+        <div class="error" id="g-error"></div>
+      </div>
+
+      <div class="card">
+        <h2>2. Review &amp; edit</h2>
+        <p class="muted">Edit anything before assigning. The model answer is only ever shown to you and used by the AI to steer hints.</p>
+        <div id="q-list"><p class="muted">No questions yet.</p></div>
+      </div>
+
+      <div class="card">
+        <h2>3. Assign</h2>
+        <div class="row">
+          <div><label>Title</label><input id="a-title" placeholder="e.g. Week 3 – Linear equations"></div>
+          <div><label>Due date (optional)</label><input id="a-due" type="date"></div>
+        </div>
+        <label>Assign to</label>
+        <select id="a-mode"><option value="all">All students</option><option value="some">Selected students</option></select>
+        <div id="a-students" hidden style="margin-top:8px"></div>
+        <div class="actions">
+          <button id="a-btn">Assign homework</button>
+        </div>
+        <div class="error" id="a-error"></div>
+        <div class="success" id="a-ok"></div>
+      </div>
+    </section>
+
+    <!-- ===== HOMEWORK LIST ===== -->
+    <section id="tab-homework" hidden>
+      <div class="card">
+        <h2>Set homework</h2>
+        <div id="hw-list"></div>
+      </div>
+      <div class="card" id="sub-card" hidden>
+        <h2 id="sub-title"></h2>
+        <div id="sub-body"></div>
+      </div>
+    </section>
+
+    <!-- ===== STUDENTS ===== -->
+    <section id="tab-students" hidden>
+      <div class="card">
+        <h2>Add a student</h2>
+        <div class="row">
+          <div><label>Full name</label><input id="s-name"></div>
+          <div><label>Username</label><input id="s-user" autocomplete="off"></div>
+          <div><label>Password</label><input id="s-pass" autocomplete="new-password"></div>
+        </div>
+        <div class="actions"><button id="s-btn">Add student</button></div>
+        <div class="error" id="s-error"></div>
+      </div>
+      <div class="card">
+        <h2>Students</h2>
+        <div id="s-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    let students = [];
+    let questions = []; // draft questions for the create tab
+
+    // ---- tabs ----
+    document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+    function showTab(name) {
+      document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+      ['create', 'homework', 'students'].forEach((t) => (document.getElementById('tab-' + t).hidden = t !== name));
+      if (name === 'homework') loadHomework();
+      if (name === 'students') loadStudents();
+    }
+
+    // ---- create: generate ----
+    document.getElementById('g-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('g-btn');
+      const err = document.getElementById('g-error');
+      err.textContent = '';
+      busy(btn, true, 'Generating…');
+      try {
+        const data = await api('/api/admin/generate', {
+          method: 'POST',
+          body: {
+            subject: v('g-subject'), topic: v('g-topic'), level: v('g-level'),
+            count: v('g-count'), notes: v('g-notes'),
+          },
+        });
+        questions = questions.concat(data.questions);
+        renderQuestions();
+        if (!v('a-title')) document.getElementById('a-title').value = `${v('g-subject')} – ${v('g-topic')}`;
+      } catch (ex) { err.textContent = ex.message; }
+      busy(btn, false);
+    });
+
+    document.getElementById('g-add').addEventListener('click', () => {
+      questions.push({ text: '', answer: '' });
+      renderQuestions();
+    });
+
+    function renderQuestions() {
+      const box = document.getElementById('q-list');
+      if (!questions.length) { box.innerHTML = '<p class="muted">No questions yet.</p>'; return; }
+      box.innerHTML = questions.map((q, i) => `
+        <div class="question">
+          <label><span class="qnum">Q${i + 1}</span> Question</label>
+          <textarea data-i="${i}" data-f="text">${esc(q.text)}</textarea>
+          <label>Model answer (teacher only)</label>
+          <textarea data-i="${i}" data-f="answer" style="min-height:48px">${esc(q.answer)}</textarea>
+          <div class="actions"><button class="danger small" data-del="${i}">Remove</button></div>
+        </div>`).join('');
+      box.querySelectorAll('textarea').forEach((t) => t.addEventListener('input', () => { questions[t.dataset.i][t.dataset.f] = t.value; }));
+      box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { questions.splice(Number(b.dataset.del), 1); renderQuestions(); }));
+    }
+
+    // ---- create: assign ----
+    document.getElementById('a-mode').addEventListener('change', async (e) => {
+      const box = document.getElementById('a-students');
+      box.hidden = e.target.value !== 'some';
+      if (!box.hidden) {
+        await loadStudents(false);
+        box.innerHTML = students.length
+          ? students.map((s) => `<label style="display:inline-block;margin-right:14px"><input type="checkbox" value="${s.id}" style="width:auto"> ${esc(s.name)} (${esc(s.username)})</label>`).join('')
+          : '<span class="muted">No students yet – add some in the Students tab.</span>';
+      }
+    });
+
+    document.getElementById('a-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('a-btn');
+      const err = document.getElementById('a-error');
+      const ok = document.getElementById('a-ok');
+      err.textContent = ''; ok.textContent = '';
+      const mode = v('a-mode');
+      const assignedTo = mode === 'all' ? 'all' : [...document.querySelectorAll('#a-students input:checked')].map((c) => c.value);
+      if (mode === 'some' && !assignedTo.length) { err.textContent = 'Pick at least one student.'; return; }
+      busy(btn, true, 'Saving…');
+      try {
+        await api('/api/admin/homework', {
+          method: 'POST',
+          body: { title: v('a-title'), subject: v('g-subject'), level: v('g-level'), dueDate: v('a-due'), questions, assignedTo },
+        });
+        ok.textContent = 'Homework assigned.';
+        questions = []; renderQuestions();
+        document.getElementById('a-title').value = '';
+      } catch (ex) { err.textContent = ex.message; }
+      busy(btn, false);
+    });
+
+    // ---- homework list & submissions ----
+    async function loadHomework() {
+      const { homework } = await api('/api/admin/homework');
+      const box = document.getElementById('hw-list');
+      if (!homework.length) { box.innerHTML = '<p class="muted">Nothing set yet.</p>'; return; }
+      box.innerHTML = `<table><thead><tr><th>Title</th><th>Subject</th><th>Questions</th><th>Assigned</th><th>Due</th><th>Submitted</th><th></th></tr></thead><tbody>
+        ${homework.slice().reverse().map((h) => `<tr>
+          <td>${esc(h.title)}</td><td>${esc(h.subject)}</td><td>${h.questions.length}</td>
+          <td>${h.assignedTo === 'all' ? 'All' : h.assignedTo.length + ' student(s)'}</td>
+          <td>${esc(h.dueDate || '—')}</td><td>${h.submissionCount}</td>
+          <td><button class="secondary small" data-view="${h.id}">View</button> <button class="danger small" data-del="${h.id}">Delete</button></td>
+        </tr>`).join('')}</tbody></table>`;
+      box.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => viewSubmissions(b.dataset.view)));
+      box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+        if (!confirm('Delete this homework and all its submissions?')) return;
+        await api('/api/admin/homework/' + b.dataset.del, { method: 'DELETE' });
+        document.getElementById('sub-card').hidden = true;
+        loadHomework();
+      }));
+    }
+
+    async function viewSubmissions(id) {
+      const { homework: hw, rows } = await api(`/api/admin/homework/${id}/submissions`);
+      document.getElementById('sub-card').hidden = false;
+      document.getElementById('sub-title').textContent = hw.title;
+      const body = document.getElementById('sub-body');
+      body.innerHTML = `
+        <h3>Questions</h3>
+        ${hw.questions.map((q, i) => `<div class="question"><span class="qnum">Q${i + 1}</span>${esc(q.text)}<div class="muted" style="margin-top:6px"><b>Model answer:</b> ${esc(q.answer)}</div></div>`).join('')}
+        <h3>Submissions</h3>
+        ${rows.length ? rows.map(({ student, submission: s }) => `
+          <div class="question">
+            <b>${esc(student.name)}</b> <span class="muted">(${esc(student.username)})</span>
+            ${s?.submittedAt ? `<span class="badge ok">Submitted ${esc(fmtDate(s.submittedAt))}</span>` : s ? '<span class="badge">In progress</span>' : '<span class="badge">Not started</span>'}
+            ${s ? `<table style="margin-top:8px"><thead><tr><th>#</th><th>Answer</th><th>Hints used</th></tr></thead><tbody>
+              ${hw.questions.map((q, i) => `<tr><td>Q${i + 1}</td><td>${esc(s.answers[q.id] || '') || '<span class="muted">—</span>'}</td>
+                <td>${(s.hints[q.id] || []).length ? (s.hints[q.id] || []).map((h) => `<div class="hint">${esc(h.hint)}</div>`).join('') : '<span class="muted">0</span>'}</td></tr>`).join('')}
+            </tbody></table>` : ''}
+          </div>`).join('') : '<p class="muted">No students are assigned to this homework.</p>'}`;
+      document.getElementById('sub-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ---- students ----
+    async function loadStudents(render = true) {
+      ({ students } = await api('/api/admin/students'));
+      if (!render) return;
+      const box = document.getElementById('s-list');
+      if (!students.length) { box.innerHTML = '<p class="muted">No students yet.</p>'; return; }
+      box.innerHTML = `<table><thead><tr><th>Name</th><th>Username</th><th></th></tr></thead><tbody>
+        ${students.map((s) => `<tr><td>${esc(s.name)}</td><td>${esc(s.username)}</td>
+          <td><button class="secondary small" data-pw="${s.id}">Reset password</button> <button class="danger small" data-del="${s.id}">Remove</button></td></tr>`).join('')}
+      </tbody></table>`;
+      box.querySelectorAll('[data-pw]').forEach((b) => b.addEventListener('click', async () => {
+        const password = prompt('New password for this student:');
+        if (!password) return;
+        try { await api(`/api/admin/students/${b.dataset.pw}/password`, { method: 'POST', body: { password } }); alert('Password updated.'); }
+        catch (ex) { alert(ex.message); }
+      }));
+      box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+        if (!confirm('Remove this student and their submissions?')) return;
+        await api('/api/admin/students/' + b.dataset.del, { method: 'DELETE' });
+        loadStudents();
+      }));
+    }
+
+    document.getElementById('s-btn').addEventListener('click', async () => {
+      const err = document.getElementById('s-error');
+      err.textContent = '';
+      try {
+        await api('/api/admin/students', { method: 'POST', body: { name: v('s-name'), username: v('s-user'), password: v('s-pass') } });
+        ['s-name', 's-user', 's-pass'].forEach((id) => (document.getElementById(id).value = ''));
+        loadStudents();
+      } catch (ex) { err.textContent = ex.message; }
+    });
+
+    const v = (id) => document.getElementById(id).value.trim();
+
+    (async () => {
+      const user = await requireLogin('admin');
+      if (user) document.getElementById('who').textContent = user.name;
+    })();
+  </script>
+</body>
+</html>

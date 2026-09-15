@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Homework – Sign in</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="login-wrap">
+    <h1>Homework</h1>
+    <div class="card">
+      <form id="form">
+        <label>Username</label>
+        <input id="username" autocomplete="username" required autofocus>
+        <label>Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <div class="actions"><button type="submit" id="btn" style="width:100%">Sign in</button></div>
+        <div class="error" id="error"></div>
+      </form>
+    </div>
+    <p class="muted" style="text-align:center">Students and administrators sign in here.</p>
+  </main>
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      const { user } = await api('/api/me');
+      if (user) location.href = user.role === 'admin' ? '/admin' : '/student';
+    })();
+
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn');
+      const err = document.getElementById('error');
+      err.textContent = '';
+      busy(btn, true, 'Signing in…');
+      try {
+        const { user } = await api('/api/login', {
+          method: 'POST',
+          body: { username: document.getElementById('username').value, password: document.getElementById('password').value },
+        });
+        location.href = user.role === 'admin' ? '/admin' : '/student';
+      } catch (ex) {
+        err.textContent = ex.message;
+        busy(btn, false);
+      }
+    });
+  </script>
+</body>
+</html>
