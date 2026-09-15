@@ -1,15 +1,21 @@
 {
   "name": "homework-app",
   "version": "1.0.0",
-  "description": "Simple homework site: admin sets AI-generated homework, students answer with AI hints. Runs on the Claude Agent SDK using your Claude Code login.",
+  "description": "Homework site: admin sets AI-generated homework, students answer with AI hints. Uses your Claude Code login locally or an API key on Vercel.",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.271",
-    "express": "^5.1.0",
-    "express-session": "^1.18.2"
+    "@anthropic-ai/sdk": "^0.125.0",
+    "@neondatabase/serverless": "^1.1.0",
+    "express": "^5.1.0"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.271"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

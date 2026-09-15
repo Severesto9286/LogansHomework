@@ -1,11 +1,47 @@
-// AI helpers built on the Claude Agent SDK.
-// The SDK drives the local `claude` binary, so it uses whatever you're logged
-// into Claude Code with (subscription) unless ANTHROPIC_API_KEY is set.
-import { query } from '@anthropic-ai/claude-agent-sdk';
+// AI helpers with two interchangeable backends:
+//
+//   ANTHROPIC_API_KEY set   -> Claude API via @anthropic-ai/sdk (pay-per-use).
+//                              This is what runs on Vercel.
+//   ANTHROPIC_API_KEY unset -> Claude Agent SDK, which drives the local `claude`
+//                              CLI and therefore uses your Claude Code login /
+//                              subscription. Local-machine only.
+//
+// Both return JSON validated against a schema.
 
-const MODEL = process.env.AI_MODEL; // e.g. "sonnet" or "opus"; unset = your Claude Code default
+const MODEL = process.env.AI_MODEL; // optional override for either backend
+// AI_BACKEND=api | agent-sdk overrides the automatic choice.
+const USE_API = process.env.AI_BACKEND ? process.env.AI_BACKEND === 'api' : !!process.env.ANTHROPIC_API_KEY;
+export const backendName = USE_API ? 'Claude API' : 'Claude Agent SDK (Claude Code login)';
 
-async function askJson({ system, prompt, schema }) {
+// ---------- backend 1: Claude API ----------
+let client;
+async function askJsonApi({ system, prompt, schema, maxTokens, effort }) {
+  if (!client) {
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    client = new Anthropic();
+  }
+  const response = await client.beta.messages.create({
+    model: MODEL || 'claude-opus-5',
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: 'user', content: prompt }],
+    output_config: { effort, format: { type: 'json_schema', schema } },
+    // If a safety classifier declines, re-run on Anthropic's recommended fallback model.
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+  });
+  if (response.stop_reason === 'refusal') throw new Error('The AI declined this request.');
+  if (response.stop_reason === 'max_tokens') throw new Error('The AI response was cut off; try fewer questions.');
+  const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  return JSON.parse(text);
+}
+
+// ---------- backend 2: Claude Agent SDK (local Claude Code login) ----------
+async function askJsonAgentSdk({ system, prompt, schema }) {
+  // Non-literal specifier so bundlers/tracers (e.g. Vercel) don't pull the
+  // ~200MB Agent SDK + Claude binary into a serverless function.
+  const pkg = '@anthropic-ai/claude-agent-sdk';
+  const { query } = await import(pkg);
   let output;
   let failure;
   for await (const msg of query({
@@ -29,6 +65,9 @@ async function askJson({ system, prompt, schema }) {
   return output;
 }
 
+const askJson = (args) => (USE_API ? askJsonApi(args) : askJsonAgentSdk(args));
+
+// ---------- question generation ----------
 const questionSchema = {
   type: 'object',
   properties: {
@@ -41,10 +80,12 @@ const questionSchema = {
           answer: { type: 'string', description: 'Model answer / marking guide (never shown to students)' },
         },
         required: ['text', 'answer'],
+        additionalProperties: false,
       },
     },
   },
   required: ['questions'],
+  additionalProperties: false,
 };
 
 export async function generateQuestions({ subject, topic, level, count, notes }) {
@@ -60,14 +101,16 @@ Student level: ${level}
 Number of questions: ${count}
 ${notes ? `Extra instructions from the teacher: ${notes}` : ''}`;
 
-  const out = await askJson({ system, prompt, schema: questionSchema });
+  const out = await askJson({ system, prompt, schema: questionSchema, maxTokens: 8000, effort: 'medium' });
   return out.questions.slice(0, count);
 }
 
+// ---------- hints ----------
 const hintSchema = {
   type: 'object',
   properties: { hint: { type: 'string' } },
   required: ['hint'],
+  additionalProperties: false,
 };
 
 export async function generateHint({ subject, level, question, answer, attempt, hintNumber }) {
@@ -87,6 +130,6 @@ Student's current attempt: ${attempt?.trim() ? attempt : '(nothing written yet)'
 
 Write the hint.`;
 
-  const out = await askJson({ system, prompt, schema: hintSchema });
+  const out = await askJson({ system, prompt, schema: hintSchema, maxTokens: 1000, effort: 'low' });
   return out.hint;
 }
