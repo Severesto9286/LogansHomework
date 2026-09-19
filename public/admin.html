@@ -236,7 +236,7 @@
         ${rows.length ? rows.map(({ student, submission: s }) => `
           <div class="question">
             <b>${esc(student.name)}</b> <span class="muted">(${esc(student.username)})</span>
-            ${s?.submittedAt ? `<span class="badge ok">Submitted ${esc(fmtDate(s.submittedAt))}</span>` : s ? '<span class="badge">In progress</span>' : '<span class="badge">Not started</span>'}
+            ${s?.submittedAt ? `<span class="badge ok">Submitted ${esc(fmtDate(s.submittedAt))}${(s.submitCount || 1) > 1 ? ' (resubmitted, ' + s.submitCount + ' times)' : ''}</span>` : s ? '<span class="badge">In progress</span>' : '<span class="badge">Not started</span>'}
             ${s ? `<table style="margin-top:8px"><thead><tr><th>#</th><th>Student's answer</th><th>Expected</th><th>Hints used</th></tr></thead><tbody>
               ${hw.questions.map((q, i) => `<tr><td>Q${i + 1}</td><td>${esc(s.answers[q.id] || '') || '<span class="muted">—</span>'}</td><td class="muted">${esc(q.finalAnswer || '')}</td>
                 <td>${(s.hints[q.id] || []).length ? (s.hints[q.id] || []).map((h) => `<div class="hint">${esc(h.hint)}</div>`).join('') : '<span class="muted">0</span>'}</td></tr>`).join('')}

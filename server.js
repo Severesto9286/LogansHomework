@@ -232,7 +232,6 @@ student.post('/homework/:id/hint', wrap(async (req, res) => {
   const q = hw.questions.find((x) => x.id === questionId);
   if (!q) return res.status(404).json({ error: 'Question not found' });
   const sub = await getOrCreateSubmission(hw, req.user.id);
-  if (sub.submittedAt) return res.status(400).json({ error: 'Homework already submitted' });
   const used = sub.hints[q.id] || [];
   const available = q.hints || [];
   if (used.length >= available.length) {
@@ -249,10 +248,12 @@ async function saveAnswers(req, res, { submit }) {
   const hw = await loadMyHomework(req, res);
   if (!hw) return;
   const sub = await getOrCreateSubmission(hw, req.user.id);
-  if (sub.submittedAt) return res.status(400).json({ error: 'Homework already submitted' });
   const answers = req.body?.answers || {};
   for (const q of hw.questions) if (q.id in answers) sub.answers[q.id] = String(answers[q.id]);
-  if (submit) sub.submittedAt = new Date().toISOString();
+  if (submit) {
+    sub.submittedAt = new Date().toISOString(); // latest submission; students may resubmit
+    sub.submitCount = (sub.submitCount || 0) + 1;
+  }
   await store.submissions.save(sub);
   res.json({ ok: true, submission: sub });
 }

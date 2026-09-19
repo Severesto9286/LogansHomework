@@ -50,7 +50,7 @@
         ${homework.slice().reverse().map((h) => `<tr>
           <td>${esc(h.title)}</td><td>${esc(h.subject)}</td><td>${h.questions.length}</td><td>${esc(h.dueDate || '—')}</td>
           <td>${h.submitted ? '<span class="badge ok">Submitted</span>' : '<span class="badge">To do</span>'}</td>
-          <td><button class="small ${h.submitted ? 'secondary' : ''}" data-open="${h.id}">${h.submitted ? 'View' : 'Open'}</button></td>
+          <td><button class="small ${h.submitted ? 'secondary' : ''}" data-open="${h.id}">Open</button></td>
         </tr>`).join('')}</tbody></table>`;
       box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openHomework(b.dataset.open)));
     }
@@ -64,9 +64,8 @@
       document.getElementById('w-title').textContent = hw.title;
       document.getElementById('w-meta').textContent = [hw.subject, hw.level, hw.dueDate ? 'Due ' + hw.dueDate : ''].filter(Boolean).join(' · ');
       document.getElementById('w-error').textContent = '';
-      document.getElementById('w-status').textContent = done ? 'Submitted ' + fmtDate(sub.submittedAt) : '';
-      document.getElementById('w-save').hidden = done;
-      document.getElementById('w-submit').hidden = done;
+      document.getElementById('w-status').textContent = done ? 'Submitted ' + fmtDate(sub.submittedAt) + ' – you can still change your answers and resubmit.' : '';
+      document.getElementById('w-submit').textContent = done ? 'Resubmit homework' : 'Submit homework';
 
       document.getElementById('w-questions').innerHTML = hw.questions.map((q, i) => {
         const hints = sub?.hints?.[q.id] || [];
@@ -74,9 +73,9 @@
         return `<div class="question" data-q="${q.id}">
           <div><span class="qnum">Q${i + 1}</span>${esc(q.text)}</div>
           <label>Your answer</label>
-          <textarea data-answer="${q.id}" ${done ? 'disabled' : ''}>${esc(sub?.answers?.[q.id] || '')}</textarea>
+          <textarea data-answer="${q.id}">${esc(sub?.answers?.[q.id] || '')}</textarea>
           <div class="hints">${hints.map((h) => `<div class="hint">💡 ${esc(h.hint)}</div>`).join('')}</div>
-          ${done || !maxHints ? '' : `<div class="actions">
+          ${!maxHints ? '' : `<div class="actions">
             <button class="secondary small" data-hint="${q.id}" ${hints.length >= maxHints ? 'disabled' : ''}>Get a hint</button>
             <span class="muted" data-hintcount="${q.id}">${hints.length}/${maxHints} hints used</span>
           </div>`}
@@ -127,7 +126,7 @@
       const answers = collectAnswers();
       const blank = Object.values(answers).filter((a) => !a.trim()).length;
       if (blank && !confirm(`${blank} question(s) are blank. Submit anyway?`)) return;
-      if (!blank && !confirm('Submit your homework? You cannot change it afterwards.')) return;
+      if (!blank && !confirm('Submit your homework? You can still resubmit later if you change an answer.')) return;
       const btn = document.getElementById('w-submit');
       busy(btn, true, 'Submitting…');
       try {
